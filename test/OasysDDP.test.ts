@@ -357,7 +357,7 @@ describe("OasysDDP", async function () {
       );
     });
 
-    it("Should fund the deployed contract", async function () {
+    it("Should forward value to the deployed contract", async function () {
       // Allow user in EVMAccessControl
       await mockEVMAccessControl.write.updateCreateAllowList({
         args: [notAllowedUser.account.address, true],
