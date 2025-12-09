@@ -353,7 +353,7 @@ describe("OasysDDP", async function () {
       });
       assert.equal(receipt.status, "success");
 
-      // Vrify the ddp contract don't have any balance
+      // Verify the ddp contract don't have any balance
       const balance = await publicClient.getBalance({
         address: ddp.address,
       });
