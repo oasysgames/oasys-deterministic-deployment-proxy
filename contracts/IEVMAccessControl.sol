@@ -4,7 +4,7 @@ pragma solidity ^0.8.28;
 /**
  * @title IEVMAccessControl
  * @notice Interface for EVM access control
- * @dev EVMAccessControl manage the Oasys L1 deployment permission
+ * @dev EVMAccessControl manages the Oasys L1 deployment permission
  * @dev Original implementation: https://github.com/oasysgames/oasys-governance-contract/blob/v1.0.0/contracts/EVMAccessControl.sol
  */
 interface IEVMAccessControl {
