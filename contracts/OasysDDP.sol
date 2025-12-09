@@ -44,8 +44,7 @@ contract OasysDDP is Ownable {
     /// @notice Array of all whitelisted addresses
     address[] public whitelistedAddresses;
 
-    /// @notice Flag to disable whitelist check
-    /// @notice When true, whitelist check is bypassed
+    /// @notice Flag to disable whitelist check (when true, whitelist is bypassed)
     bool public disableWhitelist;
 
     /// @notice Constructor sets the deployer as the owner
