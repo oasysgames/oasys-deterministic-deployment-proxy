@@ -38,7 +38,7 @@ contract OasysDDP is Ownable {
     event Deployed(address indexed deployedAddress);
 
     /// @notice Mapping to track whitelisted addresses and their positions in the array
-    /// @notice The value is 1-based index in whitelistedAddresses (0 = not whitelisted)
+    /// @dev The value is a 1-based index in whitelistedAddresses (0 = not whitelisted)
     mapping(address => uint256) private _whitelistedAddresses;
 
     /// @notice Array of all whitelisted addresses
