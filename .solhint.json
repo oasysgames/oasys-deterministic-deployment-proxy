@@ -1,0 +1,15 @@
+{
+  "extends": "solhint:recommended",
+  "rules": {
+    "compiler-version": "off",
+    "reason-string": "off",
+    "gas-custom-errors": "off",
+    "gas-indexed-events": "off",
+    "gas-strict-inequalities": "off",
+    "no-inline-assembly": "off",
+    "no-complex-fallback": "off",
+    "quotes": "off",
+    "use-natspec": "off"
+  }
+}
+
