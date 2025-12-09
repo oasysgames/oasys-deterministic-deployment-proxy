@@ -16,10 +16,11 @@ describe("OasysDDP", async function () {
   const publicClient = await viem.getPublicClient();
 
   let ddp: any;
+  let mockEVMAccessControl: any;
   let counterBytecode: `0x${string}`;
   let owner: any;
-  let whitelistedUser: any;
-  let nonWhitelistedUser: any;
+  let allowedUser: any;
+  let notAllowedUser: any;
 
   // Helper function to calculate CREATE2 address
   function calculateCreate2Address(
@@ -37,24 +38,27 @@ describe("OasysDDP", async function () {
     return slice(hash, 12) as `0x${string}`;
   }
 
-  // Deploy OasysDDP and get Counter bytecode
+  // Deploy contracts and get Counter bytecode
   beforeEach(async function () {
     // Get test accounts
-    const [ownerAccount, whitelistedUserAccount, nonWhitelistedUserAccount] =
+    const [ownerAccount, allowedUserAccount, notAllowedUserAccount] =
       await viem.getWalletClients();
     owner = ownerAccount;
-    whitelistedUser = whitelistedUserAccount;
-    nonWhitelistedUser = nonWhitelistedUserAccount;
+    allowedUser = allowedUserAccount;
+    notAllowedUser = notAllowedUserAccount;
 
-    // Explicitly deploy from owner account to ensure owner is set correctly
-    ddp = await viem.deployContract("OasysDDP");
+    // Deploy MockEVMAccessControl first
+    mockEVMAccessControl = await viem.deployContract("MockEVMAccessControl");
 
-    // Verify owner is set correctly
-    const contractOwner = await ddp.read.owner();
+    // Deploy OasysDDP with MockEVMAccessControl address
+    ddp = await viem.deployContract("OasysDDP", [mockEVMAccessControl.address]);
+
+    // Verify EVM_ACCESS_CONTROL is set correctly
+    const evmAccessControlAddress = await ddp.read.EVM_ACCESS_CONTROL();
     assert.equal(
-      contractOwner.toLowerCase(),
-      owner.account.address.toLowerCase(),
-      "Owner should be set to deployer",
+      evmAccessControlAddress.toLowerCase(),
+      mockEVMAccessControl.address.toLowerCase(),
+      "EVM_ACCESS_CONTROL should be set to MockEVMAccessControl",
     );
 
     // Get Counter bytecode from artifacts
@@ -62,347 +66,180 @@ describe("OasysDDP", async function () {
     counterBytecode = counterArtifact.bytecode as `0x${string}`;
   });
 
-  describe("Whitelist Management", function () {
-    it("Should allow owner to whitelist addresses", async function () {
-      await ddp.write.bulkWhitelist({
-        args: [[whitelistedUser.account.address]],
+  describe("Access Control", function () {
+    it("Should allow user to deploy when allowed in EVMAccessControl", async function () {
+      // Allow user in EVMAccessControl
+      await mockEVMAccessControl.write.updateCreateAllowList({
+        args: [allowedUser.account.address, true],
       });
 
-      const isWhitelisted = await ddp.read.isWhitelisted([
-        whitelistedUser.account.address,
+      // Verify user is allowed
+      const isAllowed = await mockEVMAccessControl.read.isAllowedToCreate([
+        allowedUser.account.address,
       ]);
-      assert.equal(isWhitelisted, true);
-    });
+      assert.equal(isAllowed, true, "User should be allowed");
 
-    it("Should emit BulkWhitelisted event", async function () {
-      const tx = await ddp.write.bulkWhitelist({
-        args: [[nonWhitelistedUser.account.address]],
-      });
+      // Prepare calldata: salt (32 bytes) + bytecode
+      const salt = toHex(toBytes("test-salt"), { size: 32 }) as `0x${string}`;
+      const calldata = encodePacked(
+        ["bytes32", "bytes"],
+        [salt, counterBytecode],
+      ) as `0x${string}`;
 
-      await viem.assertions.emitWithArgs(tx, ddp, "BulkWhitelisted", [
-        [getAddress(nonWhitelistedUser.account.address)],
-      ]);
-    });
-
-    it("Should revert when whitelisting empty array", async function () {
-      await assert.rejects(
-        ddp.write.bulkWhitelist({ args: [[]] }),
-        /EmptyArray/,
+      // Calculate expected address
+      const expectedAddress = calculateCreate2Address(
+        ddp.address as `0x${string}`,
+        salt,
+        counterBytecode,
       );
+
+      const tx = allowedUser.sendTransaction({
+        to: ddp.address,
+        data: calldata,
+      });
+
+      // Verify the event is emitted
+      await viem.assertions.emitWithArgs(tx, ddp, "Deployed", [
+        getAddress(expectedAddress),
+      ]);
+
+      // Verify the deployed contract is Counter
+      const counter = await viem.getContractAt("Counter", expectedAddress);
+      const initialValue = await counter.read.x();
+      assert.equal(initialValue, 0n);
     });
 
-    it("Should revert when whitelisting zero address", async function () {
+    it("Should revert when user is not allowed in EVMAccessControl", async function () {
+      // Ensure user is not allowed (default state)
+      const isAllowed = await mockEVMAccessControl.read.isAllowedToCreate([
+        notAllowedUser.account.address,
+      ]);
+      assert.equal(isAllowed, false, "User should not be allowed");
+
+      // Prepare calldata: salt (32 bytes) + bytecode
+      const salt = toHex(toBytes("test-salt"), { size: 32 }) as `0x${string}`;
+      const calldata = encodePacked(
+        ["bytes32", "bytes"],
+        [salt, counterBytecode],
+      ) as `0x${string}`;
+
       await assert.rejects(
-        ddp.write.bulkWhitelist({
-          args: [["0x0000000000000000000000000000000000000000"]],
+        notAllowedUser.sendTransaction({
+          to: ddp.address,
+          data: calldata,
         }),
-        /InvalidAddress/,
+        /NotAllowedToCreate/,
       );
     });
 
-    it("Should revert when whitelisting already whitelisted address", async function () {
-      await ddp.write.bulkWhitelist({
-        args: [[whitelistedUser.account.address]],
-      });
-      await assert.rejects(
-        ddp.write.bulkWhitelist({
-          args: [[whitelistedUser.account.address]],
-        }),
-        /AlreadyWhitelisted/,
-      );
-    });
-
-    it("Should allow owner to unwhitelist addresses", async function () {
-      await ddp.write.bulkWhitelist({
-        args: [[whitelistedUser.account.address]],
-      });
-      await ddp.write.bulkUnwhitelist({
-        args: [[whitelistedUser.account.address]],
-      });
-
-      const isWhitelisted = await ddp.read.isWhitelisted([
-        whitelistedUser.account.address,
-      ]);
-      assert.equal(isWhitelisted, false);
-    });
-
-    it("Should emit BulkUnwhitelisted event", async function () {
-      // First whitelist an address
-      await ddp.write.bulkWhitelist({
-        args: [[nonWhitelistedUser.account.address]],
-      });
-
-      const tx = await ddp.write.bulkUnwhitelist({
-        args: [[nonWhitelistedUser.account.address]],
-      });
-
-      await viem.assertions.emitWithArgs(tx, ddp, "BulkUnwhitelisted", [
-        [getAddress(nonWhitelistedUser.account.address)],
-      ]);
-    });
-
-    it("Should revert when unwhitelisting non-whitelisted address", async function () {
-      const randomAddress = "0x1234567890123456789012345678901234567890";
-      await assert.rejects(
-        ddp.write.bulkUnwhitelist({ args: [[randomAddress]] }),
-        /NotWhitelisted/,
-      );
-    });
-
-    it("Should revert when non-owner tries to whitelist", async function () {
-      await assert.rejects(
-        ddp.write.bulkWhitelist({
-          args: [[nonWhitelistedUser.account.address]],
-          account: nonWhitelistedUser.account,
-        }),
-        /OwnableUnauthorizedAccount/,
-      );
-    });
-
-    it("Should return all whitelisted addresses", async function () {
-      await ddp.write.bulkWhitelist({
-        args: [[nonWhitelistedUser.account.address]],
-      });
-      const addresses = await ddp.read.getWhitelistedAddresses();
-      assert.ok(Array.isArray(addresses));
-      assert.ok(addresses.length > 0);
-    });
-
-    it("Should whitelist multiple addresses in a single call", async function () {
+    it("Should allow multiple users when they are all allowed", async function () {
       // Get additional test accounts
       const wallets = await viem.getWalletClients();
-      const addr1 =
-        wallets[3]?.account.address ||
-        "0x1111111111111111111111111111111111111111";
-      const addr2 =
-        wallets[4]?.account.address ||
-        "0x2222222222222222222222222222222222222222";
-      const addr3 =
-        wallets[5]?.account.address ||
-        "0x3333333333333333333333333333333333333333";
+      const user1Wallet = wallets[3] || allowedUser;
+      const user2Wallet = wallets[4] || notAllowedUser;
+      const user1 = user1Wallet.account.address;
+      const user2 = user2Wallet.account.address;
 
-      // Whitelist multiple addresses at once
-      await ddp.write.bulkWhitelist({
-        args: [[addr1, addr2, addr3]],
+      // Allow both users
+      await mockEVMAccessControl.write.updateCreateAllowList({
+        args: [user1, true],
+      });
+      await mockEVMAccessControl.write.updateCreateAllowList({
+        args: [user2, true],
       });
 
-      // Verify all addresses are whitelisted
-      const isAddr1Whitelisted = await ddp.read.isWhitelisted([addr1]);
-      const isAddr2Whitelisted = await ddp.read.isWhitelisted([addr2]);
-      const isAddr3Whitelisted = await ddp.read.isWhitelisted([addr3]);
-
-      assert.equal(isAddr1Whitelisted, true, "Address 1 should be whitelisted");
-      assert.equal(isAddr2Whitelisted, true, "Address 2 should be whitelisted");
-      assert.equal(isAddr3Whitelisted, true, "Address 3 should be whitelisted");
-
-      // Verify all addresses are in the array
-      const addresses = await ddp.read.getWhitelistedAddresses();
-      assert.ok(
-        addresses.includes(getAddress(addr1)),
-        "Address 1 should be in the array",
-      );
-      assert.ok(
-        addresses.includes(getAddress(addr2)),
-        "Address 2 should be in the array",
-      );
-      assert.ok(
-        addresses.includes(getAddress(addr3)),
-        "Address 3 should be in the array",
-      );
-    });
-
-    it("Should unwhitelist multiple addresses in a single call", async function () {
-      // Get additional test accounts
-      const wallets = await viem.getWalletClients();
-      const addr1 =
-        wallets[3]?.account.address ||
-        "0x1111111111111111111111111111111111111111";
-      const addr2 =
-        wallets[4]?.account.address ||
-        "0x2222222222222222222222222222222222222222";
-      const addr3 =
-        wallets[5]?.account.address ||
-        "0x3333333333333333333333333333333333333333";
-
-      // First whitelist multiple addresses
-      await ddp.write.bulkWhitelist({
-        args: [[addr1, addr2, addr3]],
-      });
-
-      // Verify they are whitelisted
-      assert.equal(await ddp.read.isWhitelisted([addr1]), true);
-      assert.equal(await ddp.read.isWhitelisted([addr2]), true);
-      assert.equal(await ddp.read.isWhitelisted([addr3]), true);
-
-      // Unwhitelist multiple addresses at once
-      await ddp.write.bulkUnwhitelist({
-        args: [[addr1, addr2, addr3]],
-      });
-
-      // Verify all addresses are no longer whitelisted
-      const isAddr1Whitelisted = await ddp.read.isWhitelisted([addr1]);
-      const isAddr2Whitelisted = await ddp.read.isWhitelisted([addr2]);
-      const isAddr3Whitelisted = await ddp.read.isWhitelisted([addr3]);
-
+      // Verify both are allowed
       assert.equal(
-        isAddr1Whitelisted,
-        false,
-        "Address 1 should not be whitelisted",
-      );
-      assert.equal(
-        isAddr2Whitelisted,
-        false,
-        "Address 2 should not be whitelisted",
-      );
-      assert.equal(
-        isAddr3Whitelisted,
-        false,
-        "Address 3 should not be whitelisted",
-      );
-
-      // Verify the whitelist array is empty
-      const addresses = await ddp.read.getWhitelistedAddresses();
-      assert.equal(addresses.length, 0, "Whitelist should be empty");
-    });
-
-    it("Should correctly handle swap-and-pop when unwhitelisting non-last address", async function () {
-      // Get additional test accounts
-      const wallets = await viem.getWalletClients();
-      const addr1 =
-        wallets[3]?.account.address ||
-        "0x1111111111111111111111111111111111111111";
-      const addr2 =
-        wallets[4]?.account.address ||
-        "0x2222222222222222222222222222222222222222";
-      const addr3 =
-        wallets[5]?.account.address ||
-        "0x3333333333333333333333333333333333333333";
-      const addr4 =
-        wallets[6]?.account.address ||
-        "0x4444444444444444444444444444444444444444";
-
-      // Whitelist addresses in order
-      await ddp.write.bulkWhitelist({
-        args: [[addr1, addr2, addr3, addr4]],
-      });
-
-      // Verify initial state
-      let addresses = await ddp.read.getWhitelistedAddresses();
-      assert.equal(addresses.length, 4, "Should have 4 whitelisted addresses");
-      assert.equal(
-        addresses[0],
-        getAddress(addr1),
-        "First address should be addr1",
-      );
-      assert.equal(
-        addresses[1],
-        getAddress(addr2),
-        "Second address should be addr2",
-      );
-      assert.equal(
-        addresses[2],
-        getAddress(addr3),
-        "Third address should be addr3",
-      );
-      assert.equal(
-        addresses[3],
-        getAddress(addr4),
-        "Fourth address should be addr4",
-      );
-
-      // Unwhitelist the second address (not the last one)
-      await ddp.write.bulkUnwhitelist({
-        args: [[addr2]],
-      });
-
-      // Verify swap-and-pop logic: addr2 should be removed and addr4 should take its place
-      addresses = await ddp.read.getWhitelistedAddresses();
-      assert.equal(
-        addresses.length,
-        3,
-        "Should have 3 whitelisted addresses after removal",
-      );
-      assert.equal(
-        addresses[0],
-        getAddress(addr1),
-        "First address should still be addr1",
-      );
-      assert.equal(
-        addresses[1],
-        getAddress(addr4),
-        "Second address should now be addr4 (swapped from last position)",
-      );
-      assert.equal(
-        addresses[2],
-        getAddress(addr3),
-        "Third address should still be addr3",
-      );
-
-      // Verify addr2 is no longer whitelisted
-      const isAddr2Whitelisted = await ddp.read.isWhitelisted([addr2]);
-      assert.equal(
-        isAddr2Whitelisted,
-        false,
-        "addr2 should not be whitelisted",
-      );
-
-      // Verify other addresses are still whitelisted
-      assert.equal(
-        await ddp.read.isWhitelisted([addr1]),
+        await mockEVMAccessControl.read.isAllowedToCreate([user1]),
         true,
-        "addr1 should still be whitelisted",
       );
       assert.equal(
-        await ddp.read.isWhitelisted([addr3]),
+        await mockEVMAccessControl.read.isAllowedToCreate([user2]),
         true,
-        "addr3 should still be whitelisted",
-      );
-      assert.equal(
-        await ddp.read.isWhitelisted([addr4]),
-        true,
-        "addr4 should still be whitelisted",
       );
 
-      // Test unwhitelisting the first address to further verify swap-and-pop
-      await ddp.write.bulkUnwhitelist({
-        args: [[addr1]],
+      // Both should be able to deploy
+      const salt1 = toHex(toBytes("salt1"), { size: 32 }) as `0x${string}`;
+      const salt2 = toHex(toBytes("salt2"), { size: 32 }) as `0x${string}`;
+
+      const calldata1 = encodePacked(
+        ["bytes32", "bytes"],
+        [salt1, counterBytecode],
+      ) as `0x${string}`;
+      const calldata2 = encodePacked(
+        ["bytes32", "bytes"],
+        [salt2, counterBytecode],
+      ) as `0x${string}`;
+
+      // Deploy with user1
+      const tx1 = await user1Wallet.sendTransaction({
+        to: ddp.address,
+        data: calldata1,
+      });
+      const receipt1 = await publicClient.waitForTransactionReceipt({
+        hash: tx1,
+      });
+      assert.equal(receipt1.status, "success");
+
+      // Deploy with user2
+      const tx2 = await user2Wallet.sendTransaction({
+        to: ddp.address,
+        data: calldata2,
+      });
+      const receipt2 = await publicClient.waitForTransactionReceipt({
+        hash: tx2,
+      });
+      assert.equal(receipt2.status, "success");
+    });
+
+    it("Should revoke access when user is removed from EVMAccessControl", async function () {
+      // First allow user
+      await mockEVMAccessControl.write.updateCreateAllowList({
+        args: [allowedUser.account.address, true],
       });
 
-      addresses = await ddp.read.getWhitelistedAddresses();
-      assert.equal(addresses.length, 2, "Should have 2 whitelisted addresses");
-      assert.equal(
-        addresses[0],
-        getAddress(addr3),
-        "First address should now be addr3 (swapped from last position)",
-      );
-      assert.equal(
-        addresses[1],
-        getAddress(addr4),
-        "Second address should still be addr4",
-      );
-    });
-  });
+      // User should be able to deploy
+      const salt1 = toHex(toBytes("salt-before"), {
+        size: 32,
+      }) as `0x${string}`;
+      const calldata1 = encodePacked(
+        ["bytes32", "bytes"],
+        [salt1, counterBytecode],
+      ) as `0x${string}`;
 
-  describe("Whitelist Bypass", function () {
-    it("Should allow owner to disable whitelist", async function () {
-      await ddp.write.setDisableWhitelist({ args: [true] });
-      const disabled = await ddp.read.disableWhitelist();
-      assert.equal(disabled, true);
-    });
+      const tx1 = await allowedUser.sendTransaction({
+        to: ddp.address,
+        data: calldata1,
+      });
+      const receipt1 = await publicClient.waitForTransactionReceipt({
+        hash: tx1,
+      });
+      assert.equal(receipt1.status, "success");
 
-    it("Should allow owner to enable whitelist", async function () {
-      await ddp.write.setDisableWhitelist({ args: [false] });
-      const disabled = await ddp.read.disableWhitelist();
-      assert.equal(disabled, false);
-    });
+      // Revoke access
+      await mockEVMAccessControl.write.updateCreateAllowList({
+        args: [allowedUser.account.address, false],
+      });
 
-    it("Should revert when non-owner tries to disable whitelist", async function () {
+      // Verify access is revoked
+      const isAllowed = await mockEVMAccessControl.read.isAllowedToCreate([
+        allowedUser.account.address,
+      ]);
+      assert.equal(isAllowed, false, "User should not be allowed");
+
+      // User should not be able to deploy anymore
+      const salt2 = toHex(toBytes("salt-after"), { size: 32 }) as `0x${string}`;
+      const calldata2 = encodePacked(
+        ["bytes32", "bytes"],
+        [salt2, counterBytecode],
+      ) as `0x${string}`;
+
       await assert.rejects(
-        ddp.write.setDisableWhitelist({
-          args: [true],
-          account: whitelistedUser.account,
+        allowedUser.sendTransaction({
+          to: ddp.address,
+          data: calldata2,
         }),
-        /OwnableUnauthorizedAccount/,
+        /NotAllowedToCreate/,
       );
     });
   });
@@ -412,7 +249,13 @@ describe("OasysDDP", async function () {
       size: 32,
     }) as `0x${string}`;
 
-    it("Should revert when non-whitelisted user tries to deploy (whitelist enabled)", async function () {
+    it("Should revert when user is not allowed to create", async function () {
+      // Ensure user is not allowed
+      const isAllowed = await mockEVMAccessControl.read.isAllowedToCreate([
+        notAllowedUser.account.address,
+      ]);
+      assert.equal(isAllowed, false);
+
       // Prepare calldata: salt (32 bytes) + bytecode
       const calldata = encodePacked(
         ["bytes32", "bytes"],
@@ -420,18 +263,20 @@ describe("OasysDDP", async function () {
       ) as `0x${string}`;
 
       await assert.rejects(
-        nonWhitelistedUser.sendTransaction({
+        notAllowedUser.sendTransaction({
           to: ddp.address,
           data: calldata,
         }),
-        /NotWhitelisted/,
+        /NotAllowedToCreate/,
       );
     });
 
-    it("Should allow whitelisted user to deploy Counter", async function () {
-      await ddp.write.bulkWhitelist({
-        args: [[whitelistedUser.account.address]],
+    it("Should allow allowed user to deploy Counter", async function () {
+      // Allow user in EVMAccessControl
+      await mockEVMAccessControl.write.updateCreateAllowList({
+        args: [allowedUser.account.address, true],
       });
+
       // Prepare calldata: salt (32 bytes) + bytecode
       const calldata = encodePacked(
         ["bytes32", "bytes"],
@@ -445,7 +290,7 @@ describe("OasysDDP", async function () {
         counterBytecode,
       );
 
-      const tx = whitelistedUser.sendTransaction({
+      const tx = allowedUser.sendTransaction({
         to: ddp.address,
         data: calldata,
       });
@@ -462,8 +307,9 @@ describe("OasysDDP", async function () {
     });
 
     it("Should revert when deploying to same address with same salt", async function () {
-      await ddp.write.bulkWhitelist({
-        args: [[whitelistedUser.account.address]],
+      // Allow user in EVMAccessControl
+      await mockEVMAccessControl.write.updateCreateAllowList({
+        args: [allowedUser.account.address, true],
       });
 
       // Deploy 1st contract
@@ -474,7 +320,7 @@ describe("OasysDDP", async function () {
         ["bytes32", "bytes"],
         [salt1, counterBytecode],
       ) as `0x${string}`;
-      const tx1 = await whitelistedUser.sendTransaction({
+      const tx1 = await allowedUser.sendTransaction({
         to: ddp.address,
         data: calldata,
       });
@@ -485,7 +331,7 @@ describe("OasysDDP", async function () {
 
       // Second deployment with same salt should fail
       await assert.rejects(
-        whitelistedUser.sendTransaction({
+        allowedUser.sendTransaction({
           to: ddp.address,
           data: calldata,
         }),
@@ -493,50 +339,17 @@ describe("OasysDDP", async function () {
       );
     });
 
-    it("Should allow anyone to deploy when whitelist is disabled", async function () {
-      // Disable whitelist
-      await ddp.write.setDisableWhitelist({ args: [true] });
-
-      const uniqueSalt = toHex(toBytes(`salt-${Date.now()}`), {
-        size: 32,
-      }) as `0x${string}`;
-      const calldata = encodePacked(
-        ["bytes32", "bytes"],
-        [uniqueSalt, counterBytecode],
-      ) as `0x${string}`;
-
-      // Calculate expected address
-      const expectedAddress = calculateCreate2Address(
-        ddp.address as `0x${string}`,
-        uniqueSalt,
-        counterBytecode,
-      );
-
-      const tx = await nonWhitelistedUser.sendTransaction({
-        to: ddp.address,
-        data: calldata,
-      });
-
-      const receipt = await publicClient.waitForTransactionReceipt({
-        hash: tx,
-      });
-
-      assert.equal(receipt.status, "success");
-
-      // Verify deployment
-      const counter = await viem.getContractAt("Counter", expectedAddress);
-      const value = await counter.read.x();
-      assert.equal(value, 0n);
-    });
-
     it("Should revert when calldata is too short", async function () {
-      await ddp.write.setDisableWhitelist({ args: [true] });
+      // Allow user in EVMAccessControl
+      await mockEVMAccessControl.write.updateCreateAllowList({
+        args: [notAllowedUser.account.address, true],
+      });
 
       // Only 32 bytes (salt), no bytecode
       const shortCalldata = salt as `0x${string}`;
 
       await assert.rejects(
-        nonWhitelistedUser.sendTransaction({
+        notAllowedUser.sendTransaction({
           to: ddp.address,
           data: shortCalldata,
         }),
@@ -545,7 +358,10 @@ describe("OasysDDP", async function () {
     });
 
     it("Should fund the deployed contract", async function () {
-      await ddp.write.setDisableWhitelist({ args: [true] });
+      // Allow user in EVMAccessControl
+      await mockEVMAccessControl.write.updateCreateAllowList({
+        args: [notAllowedUser.account.address, true],
+      });
 
       const uniqueSalt = toHex(toBytes(`refund-test-${Date.now()}`), {
         size: 32,
@@ -556,7 +372,7 @@ describe("OasysDDP", async function () {
       ) as `0x${string}`;
 
       const sendValue = 1000000000000000n; // 0.001 ETH
-      const tx = await nonWhitelistedUser.sendTransaction({
+      const tx = await notAllowedUser.sendTransaction({
         to: ddp.address,
         data: calldata,
         value: sendValue,
@@ -567,7 +383,7 @@ describe("OasysDDP", async function () {
       });
       assert.equal(receipt.status, "success");
 
-      // Verify the ddp contract don't have any balance
+      // Verify the ddp contract doesn't have any balance
       const balance = await publicClient.getBalance({
         address: ddp.address,
       });
@@ -584,35 +400,67 @@ describe("OasysDDP", async function () {
       });
       assert.equal(deployedContractBalance, sendValue);
     });
+
+    it("Should deploy to deterministic addresses", async function () {
+      // Allow user in EVMAccessControl
+      await mockEVMAccessControl.write.updateCreateAllowList({
+        args: [allowedUser.account.address, true],
+      });
+
+      const deterministicSalt = toHex(toBytes("deterministic-test"), {
+        size: 32,
+      }) as `0x${string}`;
+
+      // Calculate expected address
+      const expectedAddress = calculateCreate2Address(
+        ddp.address as `0x${string}`,
+        deterministicSalt,
+        counterBytecode,
+      );
+
+      // Deploy contract
+      const calldata = encodePacked(
+        ["bytes32", "bytes"],
+        [deterministicSalt, counterBytecode],
+      ) as `0x${string}`;
+
+      const tx = await allowedUser.sendTransaction({
+        to: ddp.address,
+        data: calldata,
+      });
+
+      const receipt = await publicClient.waitForTransactionReceipt({
+        hash: tx,
+      });
+      assert.equal(receipt.status, "success");
+
+      // Verify deployed address matches expected
+      const counter = await viem.getContractAt("Counter", expectedAddress);
+      const value = await counter.read.x();
+      assert.equal(
+        value,
+        0n,
+        "Contract should be deployed at expected address",
+      );
+    });
   });
 
-  describe("Ownership", function () {
-    it("Should have correct owner", async function () {
-      const contractOwner = await ddp.read.owner();
-      assert.equal(
-        contractOwner.toLowerCase(),
-        owner.account.address.toLowerCase(),
-      );
-    });
-
-    it("Should transfer ownership", async function () {
-      await ddp.write.transferOwnership({
-        args: [whitelistedUser.account.address],
-      });
-      const newOwner = await ddp.read.owner();
-      assert.equal(
-        newOwner.toLowerCase(),
-        whitelistedUser.account.address.toLowerCase(),
-      );
-    });
-
-    it("Should revert when non-owner tries to transfer ownership", async function () {
+  describe("Constructor", function () {
+    it("Should revert when EVMAccessControl address is zero", async function () {
       await assert.rejects(
-        ddp.write.transferOwnership({
-          args: [whitelistedUser.account.address],
-          account: nonWhitelistedUser.account,
-        }),
-        /OwnableUnauthorizedAccount/,
+        viem.deployContract("OasysDDP", [
+          "0x0000000000000000000000000000000000000000",
+        ]),
+        /InvalidAddress/,
+      );
+    });
+
+    it("Should set EVM_ACCESS_CONTROL correctly", async function () {
+      const evmAccessControlAddress = await ddp.read.EVM_ACCESS_CONTROL();
+      assert.equal(
+        evmAccessControlAddress.toLowerCase(),
+        mockEVMAccessControl.address.toLowerCase(),
+        "EVM_ACCESS_CONTROL should match deployed MockEVMAccessControl",
       );
     });
   });
