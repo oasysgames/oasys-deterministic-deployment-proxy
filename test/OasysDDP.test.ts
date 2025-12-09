@@ -171,9 +171,15 @@ describe("OasysDDP", async function () {
     it("Should whitelist multiple addresses in a single call", async function () {
       // Get additional test accounts
       const wallets = await viem.getWalletClients();
-      const addr1 = wallets[3]?.account.address || "0x1111111111111111111111111111111111111111";
-      const addr2 = wallets[4]?.account.address || "0x2222222222222222222222222222222222222222";
-      const addr3 = wallets[5]?.account.address || "0x3333333333333333333333333333333333333333";
+      const addr1 =
+        wallets[3]?.account.address ||
+        "0x1111111111111111111111111111111111111111";
+      const addr2 =
+        wallets[4]?.account.address ||
+        "0x2222222222222222222222222222222222222222";
+      const addr3 =
+        wallets[5]?.account.address ||
+        "0x3333333333333333333333333333333333333333";
 
       // Whitelist multiple addresses at once
       await ddp.write.bulkWhitelist({
@@ -184,24 +190,39 @@ describe("OasysDDP", async function () {
       const isAddr1Whitelisted = await ddp.read.isWhitelisted([addr1]);
       const isAddr2Whitelisted = await ddp.read.isWhitelisted([addr2]);
       const isAddr3Whitelisted = await ddp.read.isWhitelisted([addr3]);
-      
+
       assert.equal(isAddr1Whitelisted, true, "Address 1 should be whitelisted");
       assert.equal(isAddr2Whitelisted, true, "Address 2 should be whitelisted");
       assert.equal(isAddr3Whitelisted, true, "Address 3 should be whitelisted");
 
       // Verify all addresses are in the array
       const addresses = await ddp.read.getWhitelistedAddresses();
-      assert.ok(addresses.includes(getAddress(addr1)), "Address 1 should be in the array");
-      assert.ok(addresses.includes(getAddress(addr2)), "Address 2 should be in the array");
-      assert.ok(addresses.includes(getAddress(addr3)), "Address 3 should be in the array");
+      assert.ok(
+        addresses.includes(getAddress(addr1)),
+        "Address 1 should be in the array",
+      );
+      assert.ok(
+        addresses.includes(getAddress(addr2)),
+        "Address 2 should be in the array",
+      );
+      assert.ok(
+        addresses.includes(getAddress(addr3)),
+        "Address 3 should be in the array",
+      );
     });
 
     it("Should unwhitelist multiple addresses in a single call", async function () {
       // Get additional test accounts
       const wallets = await viem.getWalletClients();
-      const addr1 = wallets[3]?.account.address || "0x1111111111111111111111111111111111111111";
-      const addr2 = wallets[4]?.account.address || "0x2222222222222222222222222222222222222222";
-      const addr3 = wallets[5]?.account.address || "0x3333333333333333333333333333333333333333";
+      const addr1 =
+        wallets[3]?.account.address ||
+        "0x1111111111111111111111111111111111111111";
+      const addr2 =
+        wallets[4]?.account.address ||
+        "0x2222222222222222222222222222222222222222";
+      const addr3 =
+        wallets[5]?.account.address ||
+        "0x3333333333333333333333333333333333333333";
 
       // First whitelist multiple addresses
       await ddp.write.bulkWhitelist({
@@ -222,10 +243,22 @@ describe("OasysDDP", async function () {
       const isAddr1Whitelisted = await ddp.read.isWhitelisted([addr1]);
       const isAddr2Whitelisted = await ddp.read.isWhitelisted([addr2]);
       const isAddr3Whitelisted = await ddp.read.isWhitelisted([addr3]);
-      
-      assert.equal(isAddr1Whitelisted, false, "Address 1 should not be whitelisted");
-      assert.equal(isAddr2Whitelisted, false, "Address 2 should not be whitelisted");
-      assert.equal(isAddr3Whitelisted, false, "Address 3 should not be whitelisted");
+
+      assert.equal(
+        isAddr1Whitelisted,
+        false,
+        "Address 1 should not be whitelisted",
+      );
+      assert.equal(
+        isAddr2Whitelisted,
+        false,
+        "Address 2 should not be whitelisted",
+      );
+      assert.equal(
+        isAddr3Whitelisted,
+        false,
+        "Address 3 should not be whitelisted",
+      );
 
       // Verify the whitelist array is empty
       const addresses = await ddp.read.getWhitelistedAddresses();
@@ -235,10 +268,18 @@ describe("OasysDDP", async function () {
     it("Should correctly handle swap-and-pop when unwhitelisting non-last address", async function () {
       // Get additional test accounts
       const wallets = await viem.getWalletClients();
-      const addr1 = wallets[3]?.account.address || "0x1111111111111111111111111111111111111111";
-      const addr2 = wallets[4]?.account.address || "0x2222222222222222222222222222222222222222";
-      const addr3 = wallets[5]?.account.address || "0x3333333333333333333333333333333333333333";
-      const addr4 = wallets[6]?.account.address || "0x4444444444444444444444444444444444444444";
+      const addr1 =
+        wallets[3]?.account.address ||
+        "0x1111111111111111111111111111111111111111";
+      const addr2 =
+        wallets[4]?.account.address ||
+        "0x2222222222222222222222222222222222222222";
+      const addr3 =
+        wallets[5]?.account.address ||
+        "0x3333333333333333333333333333333333333333";
+      const addr4 =
+        wallets[6]?.account.address ||
+        "0x4444444444444444444444444444444444444444";
 
       // Whitelist addresses in order
       await ddp.write.bulkWhitelist({
@@ -248,10 +289,26 @@ describe("OasysDDP", async function () {
       // Verify initial state
       let addresses = await ddp.read.getWhitelistedAddresses();
       assert.equal(addresses.length, 4, "Should have 4 whitelisted addresses");
-      assert.equal(addresses[0], getAddress(addr1), "First address should be addr1");
-      assert.equal(addresses[1], getAddress(addr2), "Second address should be addr2");
-      assert.equal(addresses[2], getAddress(addr3), "Third address should be addr3");
-      assert.equal(addresses[3], getAddress(addr4), "Fourth address should be addr4");
+      assert.equal(
+        addresses[0],
+        getAddress(addr1),
+        "First address should be addr1",
+      );
+      assert.equal(
+        addresses[1],
+        getAddress(addr2),
+        "Second address should be addr2",
+      );
+      assert.equal(
+        addresses[2],
+        getAddress(addr3),
+        "Third address should be addr3",
+      );
+      assert.equal(
+        addresses[3],
+        getAddress(addr4),
+        "Fourth address should be addr4",
+      );
 
       // Unwhitelist the second address (not the last one)
       await ddp.write.bulkUnwhitelist({
@@ -260,19 +317,51 @@ describe("OasysDDP", async function () {
 
       // Verify swap-and-pop logic: addr2 should be removed and addr4 should take its place
       addresses = await ddp.read.getWhitelistedAddresses();
-      assert.equal(addresses.length, 3, "Should have 3 whitelisted addresses after removal");
-      assert.equal(addresses[0], getAddress(addr1), "First address should still be addr1");
-      assert.equal(addresses[1], getAddress(addr4), "Second address should now be addr4 (swapped from last position)");
-      assert.equal(addresses[2], getAddress(addr3), "Third address should still be addr3");
+      assert.equal(
+        addresses.length,
+        3,
+        "Should have 3 whitelisted addresses after removal",
+      );
+      assert.equal(
+        addresses[0],
+        getAddress(addr1),
+        "First address should still be addr1",
+      );
+      assert.equal(
+        addresses[1],
+        getAddress(addr4),
+        "Second address should now be addr4 (swapped from last position)",
+      );
+      assert.equal(
+        addresses[2],
+        getAddress(addr3),
+        "Third address should still be addr3",
+      );
 
       // Verify addr2 is no longer whitelisted
       const isAddr2Whitelisted = await ddp.read.isWhitelisted([addr2]);
-      assert.equal(isAddr2Whitelisted, false, "addr2 should not be whitelisted");
+      assert.equal(
+        isAddr2Whitelisted,
+        false,
+        "addr2 should not be whitelisted",
+      );
 
       // Verify other addresses are still whitelisted
-      assert.equal(await ddp.read.isWhitelisted([addr1]), true, "addr1 should still be whitelisted");
-      assert.equal(await ddp.read.isWhitelisted([addr3]), true, "addr3 should still be whitelisted");
-      assert.equal(await ddp.read.isWhitelisted([addr4]), true, "addr4 should still be whitelisted");
+      assert.equal(
+        await ddp.read.isWhitelisted([addr1]),
+        true,
+        "addr1 should still be whitelisted",
+      );
+      assert.equal(
+        await ddp.read.isWhitelisted([addr3]),
+        true,
+        "addr3 should still be whitelisted",
+      );
+      assert.equal(
+        await ddp.read.isWhitelisted([addr4]),
+        true,
+        "addr4 should still be whitelisted",
+      );
 
       // Test unwhitelisting the first address to further verify swap-and-pop
       await ddp.write.bulkUnwhitelist({
@@ -281,8 +370,16 @@ describe("OasysDDP", async function () {
 
       addresses = await ddp.read.getWhitelistedAddresses();
       assert.equal(addresses.length, 2, "Should have 2 whitelisted addresses");
-      assert.equal(addresses[0], getAddress(addr3), "First address should now be addr3 (swapped from last position)");
-      assert.equal(addresses[1], getAddress(addr4), "Second address should still be addr4");
+      assert.equal(
+        addresses[0],
+        getAddress(addr3),
+        "First address should now be addr3 (swapped from last position)",
+      );
+      assert.equal(
+        addresses[1],
+        getAddress(addr4),
+        "Second address should still be addr4",
+      );
     });
   });
 
