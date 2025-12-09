@@ -359,7 +359,7 @@ describe("OasysDDP", async function () {
       });
       assert.equal(balance, 0n);
 
-      // Verify the deployed contract have the balance
+      // Verify the deployed contract has the balance
       const expectedAddress = calculateCreate2Address(
         ddp.address as `0x${string}`,
         uniqueSalt,
