@@ -149,7 +149,7 @@ describe("OasysDDP", async function () {
       );
     });
 
-    it("Sould revert when none-owner tries to whitelist", async function () {
+    it("Sould revert when non-owner tries to whitelist", async function () {
       await assert.rejects(
         ddp.write.bulkWhitelist({
           args: [[nonWhitelistedUser.account.address]],
