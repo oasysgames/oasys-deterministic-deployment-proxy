@@ -149,7 +149,7 @@ contract OasysDDP is Ownable {
 
         emit Deployed(deployedAddress);
 
-        // Return deployed address (20 bytes, offset 12 to skip 0x prefix)
+        // Return deployed address (20 bytes, offset 12 to skip zero padding)
         assembly {
             mstore(0, deployedAddress)
             return(12, 20)
